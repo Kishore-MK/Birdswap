@@ -28,7 +28,7 @@ export const GAME_CONFIG = {
 
 // Dummy addresses for Monad Testnet - replace with actuals if they become available
 export const TOKEN_ADDRESSES: Record<Token, `0x${string}`> = {
-  USDC: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // Example, not real on Monad
+  USDC: '0xf817257fed379853cDe0fa4F97AB987181B1E5Ea', // Example, not real on Monad
   MON: '0xc1271175B5749A5a1b321529243A23933014A463',   // Example, not real on Monad
-  WETH: '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619'    // Example, not real on Monad
+  WETH: '0xB5a30b0FDc5EA94A52fDc42e3E9760Cb8449Fb37'    // Example, not real on Monad
 };

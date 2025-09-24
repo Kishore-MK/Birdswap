@@ -39,37 +39,36 @@ const BIRD_ICONS: Record<Token, React.FC<any>> = {
 
 function generateTower(token: Token, index: number, gameAreaWidth: number): TowerStructure {
   const blocks: Block[] = [];
-  const base_x = gameAreaWidth - 250 - (index * 200);
+  const base_x = gameAreaWidth - 300 - (index * 180); // Better spacing
   const blockWidth = 40;
   const blockHeight = 20;
-  const levels = Math.floor(Math.random() * 4) + 4; // 4 to 7 levels
+  const levels = Math.floor(Math.random() * 3) + 3; // 3 to 5 levels for better gameplay
 
   let blockCount = 0;
   for (let level = 0; level < levels; level++) {
-    const numBlocks = Math.max(1, levels - level - Math.floor(Math.random() * 2));
+    const numBlocks = Math.max(1, levels - level);
     const levelWidth = numBlocks * blockWidth;
     const startX = base_x + (GAME_CONFIG.towerWidth - levelWidth) / 2;
     for (let i = 0; i < numBlocks; i++) {
-      if (Math.random() > 0.1) {
-        blocks.push({
-          id: `${token}-${blockCount++}`,
-          x: startX + i * blockWidth + (Math.random() - 0.5) * 5,
-          y: GAME_CONFIG.groundHeight + level * blockHeight,
-          width: blockWidth,
-          height: blockHeight,
-          isHit: false,
-        });
-      }
+      blocks.push({
+        id: `${token}-${blockCount++}`,
+        x: startX + i * blockWidth,
+        y: level * blockHeight, // Y is distance from ground, not absolute position
+        width: blockWidth,
+        height: blockHeight,
+        isHit: false,
+      });
     }
   }
 
-  const topY = GAME_CONFIG.groundHeight + levels * blockHeight;
+  // Add target block at the top
+  const topY = levels * blockHeight;
   blocks.push({
     id: `${token}-target`,
-    x: base_x + (GAME_CONFIG.towerWidth - 80) / 2,
+    x: base_x + (GAME_CONFIG.towerWidth - 60) / 2, // Slightly smaller target
     y: topY,
-    width: 80,
-    height: 80,
+    width: 60,
+    height: 60,
     isHit: false,
   });
 
@@ -80,6 +79,11 @@ function generateTower(token: Token, index: number, gameAreaWidth: number): Towe
 export function DeFiBirdsGame() {
   const [gameState, setGameState] = useState<GameState>('ready');
   const [selectedBird, setSelectedBird] = useState<Token>('MON');
+  
+  // Debug logging for selectedBird changes
+  useEffect(() => {
+    console.log('selectedBird changed to:', selectedBird);
+  }, [selectedBird]);
   const [chances, setChances] = useState(3);
   
   const { address, isConnected } = useAccount();
@@ -87,7 +91,7 @@ export function DeFiBirdsGame() {
   const { disconnect } = useDisconnect();
   const { sendTransactionAsync } = useSendTransaction();
   
-  const { data: monBalance } = useBalance({ address, token: TOKEN_ADDRESSES.MON });
+  const { data: monBalance } = useBalance({ address, chainId: 10143,});
   const { data: usdcBalance } = useBalance({ address, token: TOKEN_ADDRESSES.USDC });
   const { data: wethBalance } = useBalance({ address, token: TOKEN_ADDRESSES.WETH });
 
@@ -158,7 +162,7 @@ export function DeFiBirdsGame() {
         to: quote.to,
         data: quote.data,
         value: BigInt(quote.value),
-        gasLimit: BigInt(quote.gas),
+        gas: BigInt(quote.gas),
       });
 
       toast({
@@ -207,11 +211,17 @@ export function DeFiBirdsGame() {
       setTowers(currentTowers => 
         currentTowers.map(tower => {
           const updatedBlocks = tower.blocks.map(block => {
+            // Calculate block's actual position relative to ground
+            const blockTop = groundY - GAME_CONFIG.groundHeight - block.y - block.height;
+            const blockBottom = groundY - GAME_CONFIG.groundHeight - block.y;
+            
             if (!block.isHit && 
+              // X collision check
               newPos.x + GAME_CONFIG.birdSize.width / 2 > block.x && 
               newPos.x - GAME_CONFIG.birdSize.width / 2 < block.x + block.width &&
-              newPos.y + GAME_CONFIG.birdSize.height / 2 > (groundY - block.y - block.height) && 
-              newPos.y - GAME_CONFIG.birdSize.height / 2 < (groundY - block.y)
+              // Y collision check
+              newPos.y + GAME_CONFIG.birdSize.height / 2 > blockTop && 
+              newPos.y - GAME_CONFIG.birdSize.height / 2 < blockBottom
             ) {
               collision = true;
               if (block.id.includes('target')) {
@@ -272,19 +282,26 @@ export function DeFiBirdsGame() {
   }, [gameState, hitTower, selectedBird, toast, resetBird, chances, handleSwap]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (gameState !== 'ready' || balances[selectedBird] <= 0 || !isConnected) return;
-    setGameState('aiming');
-    setIsDragging(true);
+    console.log('Mouse down event:', { gameState, isConnected, target: e.target });
+    if (gameState !== 'ready' || !isConnected) return; // Temporarily removed balance check
+    
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    
+    console.log('Click position:', { x, y, slingshot: GAME_CONFIG.slingshotPosition });
     
     const distFromSlingshot = Math.sqrt(
       (x - GAME_CONFIG.slingshotPosition.x)**2 + (y - GAME_CONFIG.slingshotPosition.y)**2
     );
 
+    console.log('Distance from slingshot:', distFromSlingshot, 'required:', GAME_CONFIG.birdSize.width);
+
     if (distFromSlingshot > GAME_CONFIG.birdSize.width) return;
 
+    console.log('Starting drag...');
+    setGameState('aiming');
+    setIsDragging(true);
     setDragStart({ x, y });
     setDragEnd(GAME_CONFIG.slingshotPosition);
   };
@@ -356,9 +373,12 @@ export function DeFiBirdsGame() {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      style={{ cursor: gameState === 'ready' && balances[selectedBird] > 0 && isConnected ? 'grab' : 'default' }}
+      style={{ cursor: gameState === 'ready' && isConnected ? 'grab' : 'default' }}
     > 
-      <div className="absolute top-4 left-4 p-4 bg-white/80 rounded-lg shadow-md backdrop-blur-sm">
+      <div 
+        className="fixed top-4 left-4 p-4 bg-white/80 rounded-lg shadow-md backdrop-blur-sm z-30"
+        style={{ pointerEvents: 'auto' }}
+      >
         <h2 className="text-lg font-bold">Balances</h2>
         {Object.entries(balances).map(([token, balance]) => (
           <p key={token}>{token}: {balance.toFixed(4)}</p>
@@ -383,12 +403,59 @@ export function DeFiBirdsGame() {
         </div>
       </div>
       
-      <div className="absolute bottom-24 left-4 p-4 bg-white/80 rounded-lg shadow-md backdrop-blur-sm flex gap-2">
-        {Object.keys(TOKENS).map(token => (
-          <button key={token} onClick={() => setSelectedBird(token as Token)} className={`p-2 rounded-md transition-transform duration-200 hover:scale-110 ${selectedBird === token ? 'bg-accent ring-2 ring-accent-foreground' : 'bg-gray-200'}`}>
-            {React.createElement(BIRD_ICONS[token as Token], { className: 'w-10 h-10' })}
-          </button>
-        ))}
+      {/* Bird Selection UI - Positioned to avoid overlap */}
+      <div 
+        className="fixed w-48 bottom-4 left-0 p-3 bg-white/90 rounded-xl shadow-lg backdrop-blur-sm z-30"
+        style={{ pointerEvents: 'auto' }}
+      >
+        <h3 className="text-sm font-semibold text-gray-700 mb-2">Select Bird</h3>
+        <div className="flex gap-2">
+          {Object.keys(TOKENS).map(token => {
+            const balance = balances[token as Token];
+            const isSelected = selectedBird === token;
+            const hasBalance = balance > 0 || true; // Temporarily allow all selections for testing
+            
+            return (
+              <button 
+                key={token} 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('Bird selection clicked:', token, 'current selected:', selectedBird);
+                  setSelectedBird(token as Token);
+                }} 
+                disabled={false} // Temporarily enable all buttons
+                className={`
+                  relative p-3 rounded-lg transition-all duration-200 
+                  ${isSelected ? 'bg-blue-500 ring-2 ring-blue-300 shadow-lg scale-105' : 'bg-gray-100 hover:bg-gray-200'} 
+                  ${hasBalance ? 'cursor-pointer hover:scale-110' : 'cursor-not-allowed opacity-50'}
+                `}
+              >
+                {React.createElement(BIRD_ICONS[token as Token], { 
+                  className: `w-8 h-8 ${isSelected ? 'text-white' : 'text-gray-600'}` 
+                })}
+                <div className={`text-xs mt-1 ${isSelected ? 'text-white' : 'text-gray-600'}`}>
+                  {balance.toFixed(2)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Game Status UI */}
+      <div 
+        className="absolute top-4 right-4 p-3 bg-white/90 rounded-xl shadow-lg backdrop-blur-sm z-30"
+        style={{ pointerEvents: 'auto' }}
+      >
+        <div className="text-sm font-semibold text-gray-700 mb-1">Chances: {chances}</div>
+        <div className="text-xs text-gray-600">
+          {gameState === 'ready' && 'Aim and shoot!'}
+          {gameState === 'aiming' && 'Pull to aim...'}
+          {gameState === 'flying' && 'Bird in flight!'}
+          {gameState === 'swapping' && 'Swapping tokens...'}
+          {gameState === 'hit' && 'Nice shot!'}
+          {gameState === 'miss' && 'Try again!'}
+        </div>
       </div>
 
       <AnimatePresence>
@@ -413,7 +480,7 @@ export function DeFiBirdsGame() {
                     width: block.width,
                     height: block.height,
                     left: block.x,
-                    bottom: block.y,
+                    bottom: GAME_CONFIG.groundHeight + block.y,
                   }}
                 >
                   {isTargetBlock ? (
